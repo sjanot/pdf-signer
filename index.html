@@ -28,6 +28,9 @@
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
     }
 
     header {
@@ -158,7 +161,8 @@
     .workspace {
       display: none;
       flex-direction: column;
-      height: calc(100vh - 100px);
+      flex: 1;
+      min-height: 0;
     }
 
     .workspace.visible { display: flex; }
@@ -255,6 +259,7 @@
       position: absolute;
       cursor: move;
       user-select: none;
+      touch-action: none;
     }
 
     .annotation.selected {
@@ -323,9 +328,68 @@
     }
 
     @media (max-width: 640px) {
-      header { padding: 8px 12px; }
-      .toolbar { padding: 8px 12px; }
-      .btn { padding: 6px 10px; font-size: 13px; }
+      header {
+        padding: 8px 12px;
+        gap: 8px;
+      }
+
+      header h1 { font-size: 15px; }
+
+      .btn {
+        padding: 10px 12px;
+        font-size: 13px;
+        min-height: 44px;
+      }
+
+      .btn svg { flex-shrink: 0; }
+      .toolbar .btn span { display: none; }
+
+      .toolbar {
+        padding: 6px 8px;
+        gap: 6px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+
+      .toolbar::-webkit-scrollbar { display: none; }
+
+      .toolbar-group {
+        gap: 4px;
+        padding-right: 8px;
+        margin-right: 2px;
+        flex-shrink: 0;
+      }
+
+      .toolbar label { display: none; }
+      .toolbar input[type="number"] { width: 48px; }
+
+      .workspace { height: calc(100dvh - 90px); }
+
+      .canvas-container { padding: 8px; }
+
+      .page-nav { padding: 6px; gap: 8px; }
+
+      .delete-handle {
+        width: 28px;
+        height: 28px;
+        top: -14px;
+        right: -14px;
+        font-size: 16px;
+      }
+
+      .resize-handle {
+        width: 20px;
+        height: 20px;
+        bottom: -8px;
+        right: -8px;
+      }
+
+      .drop-zone { padding: 20px; min-height: calc(100dvh - 60px); }
+      .drop-zone-inner { padding: 40px 20px; }
+
+      .modal { padding: 16px; width: 95%; }
+      #signatureCanvas { height: 160px; }
     }
   </style>
 </head>
@@ -348,15 +412,15 @@
   <div class="toolbar-group">
     <button class="btn active" id="toolText" title="Pridať text">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9.5" y1="4" x2="9.5" y2="20"/><line x1="14.5" y1="4" x2="14.5" y2="20"/><line x1="7" y1="20" x2="17" y2="20"/></svg>
-      Text
+      <span>Text</span>
     </button>
     <button class="btn" id="toolSign" title="Podpísať">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-      Podpis
+      <span>Podpis</span>
     </button>
     <button class="btn" id="toolDraw" title="Kresliť">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19c-4 0-7-2-7-4s5-8 7-8 7 6 7 8-3 4-7 4z"/></svg>
-      Kresliť
+      <span>Kresliť</span>
     </button>
   </div>
   <div class="toolbar-group">
@@ -423,7 +487,8 @@
   let pdfBytes = null;
   let currentPage = 1;
   let totalPages = 0;
-  let scale = 1.5;
+  const isMobile = window.innerWidth <= 640;
+  let scale = isMobile ? 0.8 : 1.5;
   let currentTool = 'text'; // text, sign, draw
   let annotations = {}; // page -> [{type, ...}]
   let savedSignature = null;
@@ -578,14 +643,11 @@
     // Annotations store positions relative to scale, recalc on render
   }
 
-  // Click on annotation layer to add text
-  annotationLayer.addEventListener('click', (e) => {
-    if (currentTool !== 'text') return;
-    if (e.target !== annotationLayer) return;
-
+  // Click/tap on annotation layer to add text
+  function addTextAt(clientX, clientY) {
     const rect = annotationLayer.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
 
     const ann = {
       type: 'text',
@@ -602,6 +664,34 @@
     const el = createAnnotationElement(ann);
     const textEl = el.querySelector('[contenteditable]');
     if (textEl) textEl.focus();
+  }
+
+  annotationLayer.addEventListener('click', (e) => {
+    if (currentTool !== 'text') return;
+    if (e.target !== annotationLayer) return;
+    addTextAt(e.clientX, e.clientY);
+  });
+
+  // Touch tap to add text (use touchend with short duration to distinguish from scroll)
+  let touchStartTime = 0;
+  let touchStartPos = { x: 0, y: 0 };
+  annotationLayer.addEventListener('touchstart', (e) => {
+    if (currentTool !== 'text') return;
+    touchStartTime = Date.now();
+    touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  annotationLayer.addEventListener('touchend', (e) => {
+    if (currentTool !== 'text') return;
+    if (e.target !== annotationLayer) return;
+    const dt = Date.now() - touchStartTime;
+    const touch = e.changedTouches[0];
+    const dx = Math.abs(touch.clientX - touchStartPos.x);
+    const dy = Math.abs(touch.clientY - touchStartPos.y);
+    // Only add text on short taps without movement (not scrolls)
+    if (dt < 300 && dx < 10 && dy < 10) {
+      e.preventDefault();
+      addTextAt(touch.clientX, touch.clientY);
+    }
   });
 
   function createAnnotationElement(ann) {
@@ -671,25 +761,42 @@
     });
     el.appendChild(del);
 
-    // Drag
+    // Drag (mouse + touch)
     let dragging = false, offsetX, offsetY;
-    el.addEventListener('mousedown', (e) => {
+
+    function startDrag(clientX, clientY, e) {
       if (e.target.contentEditable === 'true' || e.target.classList.contains('resize-handle')) return;
       dragging = true;
-      offsetX = e.clientX - el.offsetLeft;
-      offsetY = e.clientY - el.offsetTop;
+      offsetX = clientX - el.offsetLeft;
+      offsetY = clientY - el.offsetTop;
       el.style.zIndex = 10;
-    });
-    window.addEventListener('mousemove', (e) => {
+    }
+
+    function moveDrag(clientX, clientY) {
       if (!dragging) return;
-      const newX = e.clientX - offsetX;
-      const newY = e.clientY - offsetY;
+      const newX = clientX - offsetX;
+      const newY = clientY - offsetY;
       el.style.left = newX + 'px';
       el.style.top = newY + 'px';
       ann.x = newX / scale;
       ann.y = newY / scale;
-    });
+    }
+
+    el.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY, e));
+    window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
     window.addEventListener('mouseup', () => { dragging = false; });
+
+    el.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      startDrag(t.clientX, t.clientY, e);
+    }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      moveDrag(t.clientX, t.clientY);
+    }, { passive: false });
+    window.addEventListener('touchend', () => { dragging = false; });
 
     annotationLayer.appendChild(el);
     return el;
