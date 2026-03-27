@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Podpis</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs" type="module"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface-hover: #334155;
+      --border: #475569;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-right: auto;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn:hover { background: var(--surface-hover); }
+    .btn-primary { background: var(--primary); border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); border-color: var(--danger); }
+    .btn-success { background: var(--success); border-color: var(--success); color: #000; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+    }
+
+    .toolbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 24px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar.visible { display: flex; }
+
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding-right: 12px;
+      border-right: 1px solid var(--border);
+      margin-right: 4px;
+    }
+
+    .toolbar-group:last-child { border-right: none; }
+
+    .toolbar label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .toolbar input[type="number"],
+    .toolbar input[type="color"],
+    .toolbar select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+
+    .toolbar input[type="number"] { width: 60px; }
+    .toolbar input[type="color"] { width: 36px; height: 30px; padding: 2px; cursor: pointer; }
+
+    .drop-zone {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 60px);
+      padding: 40px;
+      text-align: center;
+    }
+
+    .drop-zone-inner {
+      border: 2px dashed var(--border);
+      border-radius: 16px;
+      padding: 60px 40px;
+      max-width: 500px;
+      width: 100%;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .drop-zone-inner.dragover {
+      border-color: var(--primary);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .drop-zone-inner svg {
+      width: 64px;
+      height: 64px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .drop-zone-inner p {
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      font-size: 15px;
+    }
+
+    #fileInput { display: none; }
+
+    .workspace {
+      display: none;
+      flex-direction: column;
+      height: calc(100vh - 100px);
+    }
+
+    .workspace.visible { display: flex; }
+
+    .page-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 8px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .page-nav span { font-size: 14px; color: var(--text-muted); }
+
+    .canvas-container {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+      background: #0a0f1a;
+    }
+
+    .canvas-wrapper {
+      position: relative;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+      background: white;
+    }
+
+    .canvas-wrapper canvas {
+      display: block;
+    }
+
+    #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: crosshair;
+    }
+
+    /* Signature modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 500px;
+    }
+
+    .modal h2 {
+      font-size: 16px;
+      margin-bottom: 16px;
+    }
+
+    #signatureCanvas {
+      width: 100%;
+      height: 200px;
+      background: white;
+      border-radius: 8px;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      justify-content: flex-end;
+    }
+
+    /* Annotation elements on overlay */
+    .annotation {
+      position: absolute;
+      cursor: move;
+      user-select: none;
+    }
+
+    .annotation.selected {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    .annotation-text {
+      background: transparent;
+      border: 1px dashed transparent;
+      color: #000;
+      font-family: sans-serif;
+      min-width: 50px;
+      min-height: 20px;
+      padding: 2px 4px;
+    }
+
+    .annotation-text:focus {
+      border-color: var(--primary);
+      outline: none;
+    }
+
+    .annotation-signature img {
+      pointer-events: none;
+      display: block;
+    }
+
+    .resize-handle {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      width: 10px;
+      height: 10px;
+      background: var(--primary);
+      border-radius: 2px;
+      cursor: nwse-resize;
+    }
+
+    .delete-handle {
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      width: 20px;
+      height: 20px;
+      background: var(--danger);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      cursor: pointer;
+      color: white;
+      line-height: 1;
+    }
+
+    .zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .zoom-controls span {
+      font-size: 13px;
+      min-width: 45px;
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      header { padding: 8px 12px; }
+      .toolbar { padding: 8px 12px; }
+      .btn { padding: 6px 10px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>PDF Podpis</h1>
+  <label class="btn" for="fileInput" id="uploadBtn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Nahrať PDF
+  </label>
+  <input type="file" id="fileInput" accept=".pdf">
+  <button class="btn btn-success" id="downloadBtn" disabled>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Stiahnuť PDF
+  </button>
+</header>
+
+<div class="toolbar" id="toolbar">
+  <div class="toolbar-group">
+    <button class="btn active" id="toolText" title="Pridať text">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9.5" y1="4" x2="9.5" y2="20"/><line x1="14.5" y1="4" x2="14.5" y2="20"/><line x1="7" y1="20" x2="17" y2="20"/></svg>
+      Text
+    </button>
+    <button class="btn" id="toolSign" title="Podpísať">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+      Podpis
+    </button>
+    <button class="btn" id="toolDraw" title="Kresliť">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19c-4 0-7-2-7-4s5-8 7-8 7 6 7 8-3 4-7 4z"/></svg>
+      Kresliť
+    </button>
+  </div>
+  <div class="toolbar-group">
+    <label>Veľkosť:</label>
+    <input type="number" id="fontSize" value="16" min="8" max="72" step="1">
+    <label>Farba:</label>
+    <input type="color" id="fontColor" value="#000000">
+    <label>Hrúbka:</label>
+    <input type="number" id="drawWidth" value="2" min="1" max="20" step="1">
+  </div>
+  <div class="toolbar-group zoom-controls">
+    <button class="btn" id="zoomOut" title="Oddialiť">-</button>
+    <span id="zoomLevel">100%</span>
+    <button class="btn" id="zoomIn" title="Priblížiť">+</button>
+  </div>
+</div>
+
+<div class="drop-zone" id="dropZone">
+  <div class="drop-zone-inner" id="dropZoneInner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+    </svg>
+    <p>Presuňte PDF súbor sem alebo kliknite na tlačidlo</p>
+    <label class="btn btn-primary" for="fileInput">Vybrať súbor</label>
+  </div>
+</div>
+
+<div class="workspace" id="workspace">
+  <div class="page-nav">
+    <button class="btn" id="prevPage">&larr;</button>
+    <span id="pageInfo">1 / 1</span>
+    <button class="btn" id="nextPage">&rarr;</button>
+  </div>
+  <div class="canvas-container">
+    <div class="canvas-wrapper" id="canvasWrapper">
+      <canvas id="pdfCanvas"></canvas>
+      <div id="annotationLayer"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Signature modal -->
+<div class="modal-overlay" id="signModal">
+  <div class="modal">
+    <h2>Nakreslite podpis</h2>
+    <canvas id="signatureCanvas"></canvas>
+    <div class="modal-actions">
+      <button class="btn" id="signClear">Vymazať</button>
+      <button class="btn" id="signCancel">Zrušiť</button>
+      <button class="btn btn-primary" id="signConfirm">Potvrdiť</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // PDF.js setup
+  const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.min.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.mjs';
+
+  const { PDFDocument, rgb, StandardFonts, degrees } = PDFLib;
+
+  // State
+  let pdfDoc = null;
+  let pdfBytes = null;
+  let currentPage = 1;
+  let totalPages = 0;
+  let scale = 1.5;
+  let currentTool = 'text'; // text, sign, draw
+  let annotations = {}; // page -> [{type, ...}]
+  let savedSignature = null;
+
+  // Drawing state
+  let isDrawing = false;
+  let drawPaths = {}; // page -> [[{x,y},...]]
+  let currentPath = [];
+
+  // Elements
+  const fileInput = document.getElementById('fileInput');
+  const dropZone = document.getElementById('dropZone');
+  const dropZoneInner = document.getElementById('dropZoneInner');
+  const workspace = document.getElementById('workspace');
+  const toolbar = document.getElementById('toolbar');
+  const pdfCanvas = document.getElementById('pdfCanvas');
+  const annotationLayer = document.getElementById('annotationLayer');
+  const canvasWrapper = document.getElementById('canvasWrapper');
+  const pageInfo = document.getElementById('pageInfo');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const signModal = document.getElementById('signModal');
+  const signatureCanvas = document.getElementById('signatureCanvas');
+  const fontSize = document.getElementById('fontSize');
+  const fontColor = document.getElementById('fontColor');
+  const drawWidth = document.getElementById('drawWidth');
+  const zoomLevel = document.getElementById('zoomLevel');
+
+  // Tool buttons
+  const toolBtns = { text: document.getElementById('toolText'), sign: document.getElementById('toolSign'), draw: document.getElementById('toolDraw') };
+
+  Object.entries(toolBtns).forEach(([tool, btn]) => {
+    btn.addEventListener('click', () => {
+      if (tool === 'sign') {
+        openSignatureModal();
+        return;
+      }
+      currentTool = tool;
+      Object.values(toolBtns).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      annotationLayer.style.pointerEvents = tool === 'draw' ? 'none' : 'auto';
+      updateCursor();
+    });
+  });
+
+  function updateCursor() {
+    if (currentTool === 'draw') {
+      annotationLayer.style.cursor = 'default';
+      pdfCanvas.style.cursor = 'crosshair';
+    } else {
+      annotationLayer.style.cursor = 'crosshair';
+      pdfCanvas.style.cursor = 'default';
+    }
+  }
+
+  // File handling
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) loadPDF(e.target.files[0]);
+  });
+
+  ['dragenter', 'dragover'].forEach(ev => {
+    dropZoneInner.addEventListener(ev, (e) => { e.preventDefault(); dropZoneInner.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    dropZoneInner.addEventListener(ev, (e) => { e.preventDefault(); dropZoneInner.classList.remove('dragover'); });
+  });
+  dropZoneInner.addEventListener('drop', (e) => {
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') loadPDF(file);
+  });
+
+  async function loadPDF(file) {
+    pdfBytes = await file.arrayBuffer();
+    pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes.slice(0) }).promise;
+    totalPages = pdfDoc.numPages;
+    currentPage = 1;
+    annotations = {};
+    drawPaths = {};
+
+    dropZone.style.display = 'none';
+    workspace.classList.add('visible');
+    toolbar.classList.add('visible');
+    downloadBtn.disabled = false;
+
+    renderPage();
+  }
+
+  async function renderPage() {
+    const page = await pdfDoc.getPage(currentPage);
+    const viewport = page.getViewport({ scale });
+
+    pdfCanvas.width = viewport.width;
+    pdfCanvas.height = viewport.height;
+    canvasWrapper.style.width = viewport.width + 'px';
+    canvasWrapper.style.height = viewport.height + 'px';
+
+    const ctx = pdfCanvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    // Draw existing draw paths
+    if (drawPaths[currentPage]) {
+      const drawCtx = pdfCanvas.getContext('2d');
+      drawPaths[currentPage].forEach(path => {
+        if (path.points.length < 2) return;
+        drawCtx.beginPath();
+        drawCtx.strokeStyle = path.color;
+        drawCtx.lineWidth = path.width;
+        drawCtx.lineCap = 'round';
+        drawCtx.lineJoin = 'round';
+        drawCtx.moveTo(path.points[0].x, path.points[0].y);
+        for (let i = 1; i < path.points.length; i++) {
+          drawCtx.lineTo(path.points[i].x, path.points[i].y);
+        }
+        drawCtx.stroke();
+      });
+    }
+
+    // Re-render annotations
+    annotationLayer.innerHTML = '';
+    annotationLayer.style.width = viewport.width + 'px';
+    annotationLayer.style.height = viewport.height + 'px';
+
+    if (annotations[currentPage]) {
+      annotations[currentPage].forEach(ann => createAnnotationElement(ann));
+    }
+
+    pageInfo.textContent = `${currentPage} / ${totalPages}`;
+    zoomLevel.textContent = Math.round(scale / 1.5 * 100) + '%';
+    updateCursor();
+  }
+
+  // Page navigation
+  document.getElementById('prevPage').addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; renderPage(); }
+  });
+  document.getElementById('nextPage').addEventListener('click', () => {
+    if (currentPage < totalPages) { currentPage++; renderPage(); }
+  });
+
+  // Zoom
+  document.getElementById('zoomIn').addEventListener('click', () => {
+    scale = Math.min(scale + 0.3, 4);
+    reScaleAnnotations(scale);
+    renderPage();
+  });
+  document.getElementById('zoomOut').addEventListener('click', () => {
+    scale = Math.max(scale - 0.3, 0.5);
+    reScaleAnnotations(scale);
+    renderPage();
+  });
+
+  function reScaleAnnotations(newScale) {
+    // Annotations store positions relative to scale, recalc on render
+  }
+
+  // Click on annotation layer to add text
+  annotationLayer.addEventListener('click', (e) => {
+    if (currentTool !== 'text') return;
+    if (e.target !== annotationLayer) return;
+
+    const rect = annotationLayer.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const ann = {
+      type: 'text',
+      x: x / scale,
+      y: y / scale,
+      text: '',
+      fontSize: parseInt(fontSize.value),
+      color: fontColor.value,
+      id: Date.now()
+    };
+
+    if (!annotations[currentPage]) annotations[currentPage] = [];
+    annotations[currentPage].push(ann);
+    const el = createAnnotationElement(ann);
+    const textEl = el.querySelector('[contenteditable]');
+    if (textEl) textEl.focus();
+  });
+
+  function createAnnotationElement(ann) {
+    const el = document.createElement('div');
+    el.className = 'annotation' + (ann.type === 'text' ? '' : ' annotation-signature');
+    el.style.left = (ann.x * scale) + 'px';
+    el.style.top = (ann.y * scale) + 'px';
+    el.dataset.id = ann.id;
+
+    if (ann.type === 'text') {
+      const textEl = document.createElement('div');
+      textEl.className = 'annotation-text';
+      textEl.contentEditable = true;
+      textEl.style.fontSize = (ann.fontSize * scale / 1.5) + 'px';
+      textEl.style.color = ann.color;
+      textEl.textContent = ann.text;
+      textEl.addEventListener('input', () => { ann.text = textEl.textContent; });
+      textEl.addEventListener('mousedown', (e) => e.stopPropagation());
+      el.appendChild(textEl);
+    } else if (ann.type === 'signature') {
+      const img = document.createElement('img');
+      img.src = ann.dataUrl;
+      img.style.width = (ann.width * scale / 1.5) + 'px';
+      img.style.height = (ann.height * scale / 1.5) + 'px';
+      el.appendChild(img);
+
+      // Resize handle
+      const resize = document.createElement('div');
+      resize.className = 'resize-handle';
+      el.appendChild(resize);
+
+      let resizing = false;
+      let startW, startH, startX, startY;
+      resize.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        resizing = true;
+        startW = ann.width * scale / 1.5;
+        startH = ann.height * scale / 1.5;
+        startX = e.clientX;
+        startY = e.clientY;
+        const onMove = (ev) => {
+          const dw = ev.clientX - startX;
+          const ratio = ann.height / ann.width;
+          const newW = Math.max(30, startW + dw);
+          const newH = newW * ratio;
+          img.style.width = newW + 'px';
+          img.style.height = newH + 'px';
+          ann.width = newW * 1.5 / scale;
+          ann.height = newH * 1.5 / scale;
+        };
+        const onUp = () => { resizing = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    }
+
+    // Delete button
+    const del = document.createElement('div');
+    del.className = 'delete-handle';
+    del.textContent = '×';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.remove();
+      const pageAnns = annotations[currentPage];
+      const idx = pageAnns.findIndex(a => a.id === ann.id);
+      if (idx !== -1) pageAnns.splice(idx, 1);
+    });
+    el.appendChild(del);
+
+    // Drag
+    let dragging = false, offsetX, offsetY;
+    el.addEventListener('mousedown', (e) => {
+      if (e.target.contentEditable === 'true' || e.target.classList.contains('resize-handle')) return;
+      dragging = true;
+      offsetX = e.clientX - el.offsetLeft;
+      offsetY = e.clientY - el.offsetTop;
+      el.style.zIndex = 10;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const newX = e.clientX - offsetX;
+      const newY = e.clientY - offsetY;
+      el.style.left = newX + 'px';
+      el.style.top = newY + 'px';
+      ann.x = newX / scale;
+      ann.y = newY / scale;
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+
+    annotationLayer.appendChild(el);
+    return el;
+  }
+
+  // Drawing on canvas
+  pdfCanvas.addEventListener('mousedown', (e) => {
+    if (currentTool !== 'draw') return;
+    isDrawing = true;
+    const rect = pdfCanvas.getBoundingClientRect();
+    currentPath = [{ x: e.clientX - rect.left, y: e.clientY - rect.top }];
+  });
+
+  pdfCanvas.addEventListener('mousemove', (e) => {
+    if (!isDrawing || currentTool !== 'draw') return;
+    const rect = pdfCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    currentPath.push({ x, y });
+
+    const ctx = pdfCanvas.getContext('2d');
+    ctx.beginPath();
+    ctx.strokeStyle = fontColor.value;
+    ctx.lineWidth = parseInt(drawWidth.value);
+    ctx.lineCap = 'round';
+    const prev = currentPath[currentPath.length - 2];
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  });
+
+  pdfCanvas.addEventListener('mouseup', () => {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (currentPath.length > 1) {
+      if (!drawPaths[currentPage]) drawPaths[currentPage] = [];
+      drawPaths[currentPage].push({
+        points: [...currentPath],
+        color: fontColor.value,
+        width: parseInt(drawWidth.value),
+        scale: scale
+      });
+    }
+    currentPath = [];
+  });
+
+  // Touch support for drawing
+  pdfCanvas.addEventListener('touchstart', (e) => {
+    if (currentTool !== 'draw') return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = pdfCanvas.getBoundingClientRect();
+    isDrawing = true;
+    currentPath = [{ x: touch.clientX - rect.left, y: touch.clientY - rect.top }];
+  }, { passive: false });
+
+  pdfCanvas.addEventListener('touchmove', (e) => {
+    if (!isDrawing || currentTool !== 'draw') return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = pdfCanvas.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+    currentPath.push({ x, y });
+
+    const ctx = pdfCanvas.getContext('2d');
+    ctx.beginPath();
+    ctx.strokeStyle = fontColor.value;
+    ctx.lineWidth = parseInt(drawWidth.value);
+    ctx.lineCap = 'round';
+    const prev = currentPath[currentPath.length - 2];
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }, { passive: false });
+
+  pdfCanvas.addEventListener('touchend', () => {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (currentPath.length > 1) {
+      if (!drawPaths[currentPage]) drawPaths[currentPage] = [];
+      drawPaths[currentPage].push({
+        points: [...currentPath],
+        color: fontColor.value,
+        width: parseInt(drawWidth.value),
+        scale: scale
+      });
+    }
+    currentPath = [];
+  });
+
+  // Signature modal
+  let sigCtx = null;
+  let sigDrawing = false;
+
+  function openSignatureModal() {
+    signModal.classList.add('visible');
+    const rect = signatureCanvas.getBoundingClientRect();
+    signatureCanvas.width = rect.width;
+    signatureCanvas.height = rect.height;
+    sigCtx = signatureCanvas.getContext('2d');
+    sigCtx.fillStyle = 'white';
+    sigCtx.fillRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+    sigCtx.strokeStyle = '#000';
+    sigCtx.lineWidth = 2.5;
+    sigCtx.lineCap = 'round';
+    sigCtx.lineJoin = 'round';
+  }
+
+  signatureCanvas.addEventListener('mousedown', (e) => {
+    sigDrawing = true;
+    sigCtx.beginPath();
+    const rect = signatureCanvas.getBoundingClientRect();
+    sigCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  });
+
+  signatureCanvas.addEventListener('mousemove', (e) => {
+    if (!sigDrawing) return;
+    const rect = signatureCanvas.getBoundingClientRect();
+    sigCtx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    sigCtx.stroke();
+  });
+
+  signatureCanvas.addEventListener('mouseup', () => { sigDrawing = false; });
+  signatureCanvas.addEventListener('mouseleave', () => { sigDrawing = false; });
+
+  // Touch support for signature
+  signatureCanvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    sigDrawing = true;
+    sigCtx.beginPath();
+    const rect = signatureCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    sigCtx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+  }, { passive: false });
+
+  signatureCanvas.addEventListener('touchmove', (e) => {
+    if (!sigDrawing) return;
+    e.preventDefault();
+    const rect = signatureCanvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    sigCtx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+    sigCtx.stroke();
+  }, { passive: false });
+
+  signatureCanvas.addEventListener('touchend', () => { sigDrawing = false; });
+
+  document.getElementById('signClear').addEventListener('click', () => {
+    sigCtx.fillStyle = 'white';
+    sigCtx.fillRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+    sigCtx.strokeStyle = '#000';
+  });
+
+  document.getElementById('signCancel').addEventListener('click', () => {
+    signModal.classList.remove('visible');
+  });
+
+  document.getElementById('signConfirm').addEventListener('click', () => {
+    // Get trimmed signature
+    const dataUrl = signatureCanvas.toDataURL('image/png');
+    savedSignature = dataUrl;
+    signModal.classList.remove('visible');
+
+    // Place signature at center of visible area
+    const wrapperRect = canvasWrapper.getBoundingClientRect();
+    const ann = {
+      type: 'signature',
+      x: (wrapperRect.width / 2 - 75) / scale,
+      y: (wrapperRect.height / 2 - 25) / scale,
+      width: 150,
+      height: 50,
+      dataUrl: dataUrl,
+      id: Date.now()
+    };
+
+    if (!annotations[currentPage]) annotations[currentPage] = [];
+    annotations[currentPage].push(ann);
+    createAnnotationElement(ann);
+
+    currentTool = 'text';
+    Object.values(toolBtns).forEach(b => b.classList.remove('active'));
+    toolBtns.text.classList.add('active');
+    updateCursor();
+  });
+
+  // Download modified PDF
+  downloadBtn.addEventListener('click', async () => {
+    const pdfLibDoc = await PDFDocument.load(pdfBytes);
+    const helvetica = await pdfLibDoc.embedFont(StandardFonts.Helvetica);
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page = pdfLibDoc.getPage(pageNum - 1);
+      const { width: pageWidth, height: pageHeight } = page.getSize();
+
+      // Get the pdf.js page for viewport calculation
+      const pjsPage = await pdfDoc.getPage(pageNum);
+      const viewport = pjsPage.getViewport({ scale: 1.5 });
+      const scaleX = pageWidth / viewport.width;
+      const scaleY = pageHeight / viewport.height;
+
+      // Text and signature annotations
+      if (annotations[pageNum]) {
+        for (const ann of annotations[pageNum]) {
+          if (ann.type === 'text' && ann.text.trim()) {
+            const pdfX = ann.x * 1.5 * scaleX;
+            const pdfY = pageHeight - (ann.y * 1.5 * scaleY) - (ann.fontSize * scaleY);
+
+            const hexColor = ann.color;
+            const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+            const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+            const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+
+            page.drawText(ann.text, {
+              x: pdfX,
+              y: pdfY,
+              size: ann.fontSize * scaleY * 1.5,
+              font: helvetica,
+              color: rgb(r, g, b),
+            });
+          } else if (ann.type === 'signature') {
+            const pngImage = await pdfLibDoc.embedPng(ann.dataUrl);
+            const pdfX = ann.x * 1.5 * scaleX;
+            const pdfY = pageHeight - (ann.y * 1.5 * scaleY) - (ann.height * scaleY);
+
+            page.drawImage(pngImage, {
+              x: pdfX,
+              y: pdfY,
+              width: ann.width * scaleY,
+              height: ann.height * scaleY,
+            });
+          }
+        }
+      }
+
+      // Draw paths
+      if (drawPaths[pageNum]) {
+        for (const path of drawPaths[pageNum]) {
+          if (path.points.length < 2) continue;
+          const pathScaleX = pageWidth / (pjsPage.getViewport({ scale: path.scale }).width);
+          const pathScaleY = pageHeight / (pjsPage.getViewport({ scale: path.scale }).height);
+
+          const hexColor = path.color;
+          const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+          const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+          const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+
+          for (let i = 1; i < path.points.length; i++) {
+            const x1 = path.points[i - 1].x * pathScaleX;
+            const y1 = pageHeight - path.points[i - 1].y * pathScaleY;
+            const x2 = path.points[i].x * pathScaleX;
+            const y2 = pageHeight - path.points[i].y * pathScaleY;
+
+            page.drawLine({
+              start: { x: x1, y: y1 },
+              end: { x: x2, y: y2 },
+              thickness: path.width * pathScaleX,
+              color: rgb(r, g, b),
+            });
+          }
+        }
+      }
+    }
+
+    const modifiedBytes = await pdfLibDoc.save();
+    const blob = new Blob([modifiedBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'podpisany-dokument.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const selected = annotationLayer.querySelector('.annotation.selected');
+      if (selected) {
+        const id = parseInt(selected.dataset.id);
+        selected.remove();
+        const pageAnns = annotations[currentPage];
+        if (pageAnns) {
+          const idx = pageAnns.findIndex(a => a.id === id);
+          if (idx !== -1) pageAnns.splice(idx, 1);
+        }
+      }
+    }
+    // Ctrl+Z for draw undo
+    if (e.ctrlKey && e.key === 'z' && currentTool === 'draw') {
+      if (drawPaths[currentPage] && drawPaths[currentPage].length > 0) {
+        drawPaths[currentPage].pop();
+        renderPage();
+      }
+    }
+  });
+</script>
+
+</body>
+</html>
