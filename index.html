@@ -764,8 +764,11 @@
     // Drag (mouse + touch)
     let dragging = false, offsetX, offsetY;
 
-    function startDrag(clientX, clientY, e) {
-      if (e.target.contentEditable === 'true' || e.target.classList.contains('resize-handle')) return;
+    function isResizeHandle(target) {
+      return target.classList && target.classList.contains('resize-handle');
+    }
+
+    function startDrag(clientX, clientY) {
       dragging = true;
       offsetX = clientX - el.offsetLeft;
       offsetY = clientY - el.offsetTop;
@@ -782,21 +785,26 @@
       ann.y = newY / scale;
     }
 
-    el.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY, e));
+    el.addEventListener('mousedown', (e) => {
+      if (e.target.contentEditable === 'true' || isResizeHandle(e.target)) return;
+      startDrag(e.clientX, e.clientY);
+    });
     window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
     window.addEventListener('mouseup', () => { dragging = false; });
 
     el.addEventListener('touchstart', (e) => {
+      if (isResizeHandle(e.target)) return;
+      e.preventDefault();
       const t = e.touches[0];
-      startDrag(t.clientX, t.clientY, e);
-    }, { passive: true });
-    window.addEventListener('touchmove', (e) => {
+      startDrag(t.clientX, t.clientY);
+    }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
       if (!dragging) return;
       e.preventDefault();
       const t = e.touches[0];
       moveDrag(t.clientX, t.clientY);
     }, { passive: false });
-    window.addEventListener('touchend', () => { dragging = false; });
+    el.addEventListener('touchend', () => { dragging = false; });
 
     annotationLayer.appendChild(el);
     return el;
