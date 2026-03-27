@@ -194,6 +194,12 @@
       display: block;
     }
 
+    #annotationLayer {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
     #overlayCanvas {
       position: absolute;
       top: 0;
@@ -231,7 +237,7 @@
     #signatureCanvas {
       width: 100%;
       height: 200px;
-      background: white;
+      background: repeating-conic-gradient(#e5e7eb 0% 25%, white 0% 50%) 50% / 16px 16px;
       border-radius: 8px;
       cursor: crosshair;
       touch-action: none;
@@ -785,9 +791,8 @@
     signatureCanvas.width = rect.width;
     signatureCanvas.height = rect.height;
     sigCtx = signatureCanvas.getContext('2d');
-    sigCtx.fillStyle = 'white';
-    sigCtx.fillRect(0, 0, signatureCanvas.width, signatureCanvas.height);
-    sigCtx.strokeStyle = '#000';
+    sigCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+    sigCtx.strokeStyle = fontColor.value;
     sigCtx.lineWidth = 2.5;
     sigCtx.lineCap = 'round';
     sigCtx.lineJoin = 'round';
@@ -795,6 +800,7 @@
 
   signatureCanvas.addEventListener('mousedown', (e) => {
     sigDrawing = true;
+    sigCtx.strokeStyle = fontColor.value;
     sigCtx.beginPath();
     const rect = signatureCanvas.getBoundingClientRect();
     sigCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
@@ -814,6 +820,7 @@
   signatureCanvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
     sigDrawing = true;
+    sigCtx.strokeStyle = fontColor.value;
     sigCtx.beginPath();
     const rect = signatureCanvas.getBoundingClientRect();
     const touch = e.touches[0];
@@ -832,9 +839,8 @@
   signatureCanvas.addEventListener('touchend', () => { sigDrawing = false; });
 
   document.getElementById('signClear').addEventListener('click', () => {
-    sigCtx.fillStyle = 'white';
-    sigCtx.fillRect(0, 0, signatureCanvas.width, signatureCanvas.height);
-    sigCtx.strokeStyle = '#000';
+    sigCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+    sigCtx.strokeStyle = fontColor.value;
   });
 
   document.getElementById('signCancel').addEventListener('click', () => {
@@ -959,6 +965,9 @@
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
+    // Skip shortcuts when editing text
+    if (e.target.contentEditable === 'true' || e.target.tagName === 'INPUT') return;
+
     if (e.key === 'Delete' || e.key === 'Backspace') {
       const selected = annotationLayer.querySelector('.annotation.selected');
       if (selected) {
