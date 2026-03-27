@@ -1074,8 +1074,14 @@
     const a = document.createElement('a');
     a.href = url;
     a.download = 'podpisany-dokument.pdf';
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    // Delay cleanup for mobile browsers
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
   });
 
   // Keyboard shortcuts
